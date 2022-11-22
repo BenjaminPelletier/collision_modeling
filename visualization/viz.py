@@ -7,7 +7,8 @@ from typing import Optional, Tuple, List, Iterable, Callable
 from direct.gui.DirectGui import DirectOptionMenu
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
-from panda3d.core import Point3, LineSegs, NodePath, LColor
+from panda3d.core import Point3, LineSegs, NodePath, LColor, Camera, \
+    OrthographicLens, DisplayRegion, TextNode
 
 from flights import Flight, FlightPath
 
@@ -214,9 +215,32 @@ class EncounterVisualization(object):
         return False
 
 
-class Camera(str, Enum):
+class CameraStyle(str, Enum):
     Rotating = "Rotating"
     Manual = "Manual"
+
+
+class Viewport(object):
+    def __init__(self, parent: NodePath, dr: DisplayRegion, index: int, orthographic: bool, position: Point3, x_label: Optional[str] = None, y_label: Optional[str] = None):
+        self.dr = dr
+        self.cam = cam = Camera(f"cam{index}")
+        if orthographic:
+            lens = OrthographicLens()
+            lens.setFilmSize(20)
+            cam.setLens(lens)
+        self.camera = parent.attachNewNode(cam)
+        self.camera.setName(f"camera{index}")
+        self.camera.setPos(position)
+        self.camera.lookAt(0, 0, 0)
+        self.dr.setCamera(self.camera)
+        self.cam.getLens().setAspectRatio(self.dr.getPixelWidth() / self.dr.getPixelHeight())
+
+        if x_label:
+            self.cam.
+            self.x_label = TextNode(x_label)
+            self.x_label_node = self.camera.attachNewNode(self.x_label)
+            self.x_label_node.setScale(0.07)
+            self.x_label_node.setPos(0, 0, 0)
 
 
 class EncounterVisualizer(ShowBase):
@@ -237,18 +261,38 @@ class EncounterVisualizer(ShowBase):
         self.make_flights = make_flights
 
         self.menu = DirectOptionMenu(text="Camera", scale=0.07, command=self._on_select_camera,
-                                items=[Camera.Rotating, Camera.Manual], initialitem=1,
+                                items=[CameraStyle.Rotating, CameraStyle.Manual], initialitem=1,
                                 highlightColor=(0.65, 0.65, 0.65, 1))
         self.menu.setPos(-self.getAspectRatio(), 0, 1 - self.menu.getScale().z)
+
+        dr = self.camNode.getDisplayRegion(0)
+        dr.setActive(0)
+
+        window = dr.getWindow()
+        drul = window.makeDisplayRegion(0, 0.5, 0.5, 1)
+        drul.setSort(dr.getSort())
+        drur = window.makeDisplayRegion(0.5, 1, 0.5, 1)
+        drur.setSort(dr.getSort())
+        drll = window.makeDisplayRegion(0, 0.5, 0, 0.5)
+        drll.setSort(dr.getSort())
+        drlr = window.makeDisplayRegion(0.5, 1, 0, 0.5)
+        drlr.setSort(dr.getSort())
+
+        self.viewports = [
+            Viewport(self.render, drul, 0, False, Point3(-20, 20, 20)),
+            Viewport(self.render, drur, 1, True, Point3(-20, 0, 0), x_label="Lateral"),
+            Viewport(self.render, drll, 2, True, Point3(0, 20, 0)),
+            Viewport(self.render, drlr, 3, True, Point3(0, 0, 20))
+        ]
 
         self.taskMgr.add(self._spin_camera_task, "SpinCameraTask")
         self.taskMgr.add(self._update_encounter_task, "UpdateEncounterTask")
 
-    def _on_select_camera(self, style: Camera):
-        if style == Camera.Rotating:
+    def _on_select_camera(self, style: CameraStyle):
+        if style == CameraStyle.Rotating:
             self.disableMouse()
             self.auto_spin = True
-        elif style == Camera.Manual:
+        elif style == CameraStyle.Manual:
             self.auto_spin = False
             self.enableMouse()
         else:
